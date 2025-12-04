@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Team LinkedIn Profiles</title>
+    <title>ClinicalRAG - A Scalable Benchmark of Privacy, Relevance, and Speed in Semantic Retrieval for Clinical Transcriptions</title>
     <style>
         * {
             margin: 0;
@@ -12,208 +12,737 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            color: #333;
+            line-height: 1.6;
             padding: 20px;
+            min-height: 100vh;
         }
 
         .container {
+            max-width: 1200px;
+            margin: 0 auto;
             background: white;
             border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 500px;
-            width: 100%;
-            padding: 40px;
-        }
-
-        .project-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 25px;
-            margin: -40px -40px 30px -40px;
-            border-radius: 20px 20px 0 0;
-            text-align: center;
-        }
-
-        .project-code {
-            font-size: 16px;
-            font-weight: 700;
-            letter-spacing: 1px;
-            margin-bottom: 10px;
-            opacity: 0.95;
-        }
-
-        .project-title {
-            font-size: 15px;
-            line-height: 1.5;
-            font-weight: 400;
-            opacity: 0.9;
-        }
-
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 28px;
-        }
-
-        .subtitle {
-            text-align: center;
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 14px;
-        }
-
-        .links {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-
-        .link-item {
-            display: block;
-            background: linear-gradient(135deg, #0077b5 0%, #005885 100%);
-            color: white;
-            text-decoration: none;
-            padding: 18px 24px;
-            border-radius: 12px;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(0, 119, 181, 0.3);
-            position: relative;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             overflow: hidden;
         }
 
-        .link-item:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(0, 119, 181, 0.4);
+        header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
         }
 
-        .link-item::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: -100%;
-            width: 100%;
-            height: 100%;
-            background: rgba(255, 255, 255, 0.1);
-            transition: left 0.5s ease;
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 700;
         }
 
-        .link-item:hover::before {
-            left: 100%;
-        }
-
-        .name {
-            font-size: 18px;
-            font-weight: 600;
-            display: block;
-            margin-bottom: 4px;
-        }
-
-        .linkedin-tag {
-            font-size: 13px;
+        header p {
+            font-size: 1.2em;
             opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .architecture-nav {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .arch-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.95em;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .arch-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .arch-button.active {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .architecture-display {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            min-height: 400px;
+        }
+
+        .architecture-display h2 {
+            color: #1e3c72;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .architecture-display p {
+            margin-bottom: 20px;
+            font-size: 1.05em;
+            color: #555;
+        }
+
+        .flow-diagram {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 15px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .flow-box {
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            padding: 15px 20px;
+            min-width: 140px;
+            text-align: center;
+            font-weight: 600;
+            color: #1e3c72;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .flow-box:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .flow-arrow {
+            font-size: 1.5em;
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .info-popup {
+            display: none;
+            position: absolute;
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            z-index: 100;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-top: 10px;
+            width: 250px;
+            font-weight: normal;
+            font-size: 0.9em;
+            text-align: left;
+        }
+
+        .flow-box:hover .info-popup {
+            display: block;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        .feature-card {
+            background: white;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateX(5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+        }
+
+        .feature-card h3 {
+            color: #1e3c72;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+
+        .example-queries {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            margin-top: 30px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        }
+
+        .example-queries h3 {
+            color: #1e3c72;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+
+        .query-example {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .query-example .query {
+            font-weight: 600;
+            color: #1e3c72;
+            margin-bottom: 8px;
+        }
+
+        .query-example .query::before {
+            content: "Q: ";
+            color: #667eea;
+            font-weight: 700;
+        }
+
+        .query-example .answer {
+            color: #555;
+            line-height: 1.6;
+            padding-left: 15px;
+        }
+
+        .query-example .answer::before {
+            content: "A: ";
+            color: #764ba2;
+            font-weight: 700;
+        }
+
+        .team-members {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .linkedin-button {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: rgba(255,255,255,0.15);
+            padding: 20px;
+            border-radius: 15px;
+            text-decoration: none;
+            color: white;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255,255,255,0.2);
+        }
+
+        .linkedin-button:hover {
+            background: rgba(255,255,255,0.25);
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
         }
 
         .linkedin-icon {
-            width: 16px;
-            height: 16px;
+            width: 80px;
+            height: 80px;
+            background: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+            font-size: 2.5em;
+            color: #0077b5;
         }
 
-        footer {
-            margin-top: 30px;
+        .linkedin-button .name {
+            font-weight: 600;
+            font-size: 1.1em;
+            margin-bottom: 5px;
+        }
+
+        .linkedin-button .role {
+            font-size: 0.85em;
+            opacity: 0.9;
+        }
+
+        .contact-section {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 40px;
             text-align: center;
-            color: #999;
-            font-size: 12px;
+            margin-top: 40px;
+            border-radius: 15px;
         }
 
-        /* Instructions for customization */
-        .instructions {
-            background: #f8f9fa;
-            border-left: 4px solid #667eea;
-            padding: 15px;
+        .contact-section h2 {
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+
+        .contact-info {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            flex-wrap: wrap;
             margin-top: 20px;
-            border-radius: 8px;
-            font-size: 13px;
-            color: #555;
+        }
+
+        .contact-item {
+            background: rgba(255,255,255,0.1);
+            padding: 15px 30px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .contact-item:hover {
+            background: rgba(255,255,255,0.2);
+            transform: translateY(-3px);
+        }
+
+        .hidden {
             display: none;
+        }
+
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 1.8em;
+            }
+            
+            .flow-diagram {
+                flex-direction: column;
+            }
+            
+            .flow-arrow {
+                transform: rotate(90deg);
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="project-header">
-            <div class="project-code">GC 1215: ClinicalRAG</div>
-            <div class="project-title">A Scalable Benchmark of Privacy, Relevance, and Speed in Semantic Retrieval for Clinical Transcriptions</div>
-        </div>
-        
-        <h1>Connect With Our Team</h1>
-        <p class="subtitle">Click to view our LinkedIn profiles</p>
-        
-        <div class="links" id="linksList">
-            <!-- Links will be added here by JavaScript -->
-        </div>
+        <header>
+            <h1>Clinical RAG Systems</h1>
+            <p>Exploring Advanced Retrieval-Augmented Generation Architectures</p>
+        </header>
 
-        <footer>
-            Scan the QR code on our poster to visit this page
-        </footer>
+        <div class="content">
+            <div class="architecture-nav">
+                <button class="arch-button active" onclick="showArchitecture(1)">Baseline Vector Search</button>
+                <button class="arch-button" onclick="showArchitecture(2)">Differential Privacy RAG</button>
+                <button class="arch-button" onclick="showArchitecture(3)">Fully Homomorphic Encryption</button>
+                <button class="arch-button" onclick="showArchitecture(4)">Accelerated RAG</button>
+                <button class="arch-button" onclick="showArchitecture(5)">Optimized RAG</button>
+            </div>
+
+            <div id="arch-1" class="architecture-display">
+                <h2>1. Baseline Vector Search</h2>
+                <p>The foundational approach using sentence transformers and FAISS indexing for efficient similarity search in clinical documents.</p>
+                
+                <div class="flow-diagram">
+                    <div class="flow-box">
+                        Document Corpus
+                        <div class="info-popup">Raw clinical documents and medical text data ready for processing</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        PySpark Processing
+                        <div class="info-popup">Distributed processing of large-scale clinical data using Apache Spark</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Sentence Transformers
+                        <div class="info-popup">Convert text into dense vector embeddings using pre-trained models</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        FAISS Index
+                        <div class="info-popup">Fast similarity search library by Facebook for efficient nearest neighbor retrieval</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Top-K Results
+                        <div class="info-popup">Return the K most relevant documents based on similarity scores</div>
+                    </div>
+                </div>
+
+                <div class="features">
+                    <div class="feature-card">
+                        <h3>⚡ Fast Retrieval</h3>
+                        <p>Optimized for speed with FAISS indexing</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📊 Scalable</h3>
+                        <p>PySpark enables processing of massive datasets</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🎯 Accurate</h3>
+                        <p>Sentence transformers provide semantic understanding</p>
+                    </div>
+                </div>
+
+                <div class="example-queries">
+                    <h3>Example Queries & Responses</h3>
+                    <div class="query-example">
+                        <div class="query">What are the common symptoms of Type 2 diabetes?</div>
+                        <div class="answer">Type 2 diabetes commonly presents with increased thirst, frequent urination, increased hunger, fatigue, blurred vision, slow-healing sores, and frequent infections. Some patients may also experience areas of darkened skin, particularly in the armpits and neck.</div>
+                    </div>
+                    <div class="query-example">
+                        <div class="query">Recommended treatment protocols for hypertension in elderly patients</div>
+                        <div class="answer">For elderly patients with hypertension, treatment typically begins with lifestyle modifications including sodium restriction and regular exercise. First-line pharmacotherapy often includes thiazide diuretics or calcium channel blockers, with target blood pressure of <140/90 mmHg, individualized based on comorbidities and frailty status.</div>
+                    </div>
+                    <div class="query-example">
+                        <div class="query">What are the contraindications for MRI scanning?</div>
+                        <div class="answer">Absolute contraindications include cardiac pacemakers, implantable cardioverter-defibrillators, cochlear implants, and metallic foreign bodies in the eyes. Relative contraindications include claustrophobia, first trimester pregnancy, and certain prosthetic heart valves. Patient screening is essential before any MRI procedure.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="arch-2" class="architecture-display hidden">
+                <h2>2. Differential Privacy RAG (DP)</h2>
+                <p>Enhanced privacy protection through Gaussian noise addition to embeddings, ensuring patient data confidentiality while maintaining search utility.</p>
+                
+                <div class="flow-diagram">
+                    <div class="flow-box">
+                        Document Corpus
+                        <div class="info-popup">Clinical documents requiring privacy protection</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        PySpark Processing
+                        <div class="info-popup">Distributed document processing pipeline</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Sentence Transformers
+                        <div class="info-popup">Generate embeddings from clinical text</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Add Gaussian Noise (ε-DP)
+                        <div class="info-popup">Apply differential privacy by adding calibrated noise to embeddings</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        FAISS Index (Noise)
+                        <div class="info-popup">Index the privacy-protected embeddings</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Top-K Results (Private)
+                        <div class="info-popup">Return results with formal privacy guarantees</div>
+                    </div>
+                </div>
+
+                <div class="features">
+                    <div class="feature-card">
+                        <h3>🔒 Privacy Guaranteed</h3>
+                        <p>Formal ε-differential privacy protection</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>⚖️ Utility Balance</h3>
+                        <p>Calibrated noise maintains search accuracy</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🏥 HIPAA Compliant</h3>
+                        <p>Designed for healthcare data regulations</p>
+                    </div>
+                </div>
+
+                <div class="example-queries">
+                    <h3>Example Queries & Responses</h3>
+                    <div class="query-example">
+                        <div class="query">Find patient records with similar cardiovascular symptoms</div>
+                        <div class="answer">Retrieved 10 de-identified cases with comparable presentations: chest pain, dyspnea, and elevated cardiac biomarkers. Privacy-preserving noise ensures individual patient data cannot be reverse-engineered while maintaining clinical utility for pattern recognition. Privacy budget: ε=2.0</div>
+                    </div>
+                    <div class="query-example">
+                        <div class="query">What are the outcomes for immunotherapy in melanoma patients?</div>
+                        <div class="answer">Analysis of privacy-protected cohort data shows overall response rate of 40-45% with checkpoint inhibitors. Differential privacy mechanisms protect individual treatment responses while allowing aggregate outcome analysis. Results maintain statistical validity within privacy constraints.</div>
+                    </div>
+                    <div class="query-example">
+                        <div class="query">Adverse drug reactions associated with specific medication</div>
+                        <div class="answer">Common adverse reactions identified across protected patient records include nausea (15-20%), fatigue (12-18%), and headache (8-12%). Privacy-preserving aggregation ensures compliance with patient confidentiality while enabling pharmacovigilance insights.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="arch-3" class="architecture-display hidden">
+                <h2>3. Fully Homomorphic Encryption (FHE)</h2>
+                <p>Ultimate security through encrypted computation - search and retrieve without ever decrypting sensitive clinical data.</p>
+                
+                <div class="flow-diagram">
+                    <div class="flow-box">
+                        Documents (Reduced)
+                        <div class="info-popup">Optimized document set for encrypted operations</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Embeddings (Unencrypted)
+                        <div class="info-popup">Generate embeddings before encryption</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Encrypted Distributed Computation
+                        <div class="info-popup">Perform similarity search on encrypted data using FHE</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Decryption
+                        <div class="info-popup">Only decrypt final results, never intermediate data</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Top-K Results
+                        <div class="info-popup">Secure results from fully encrypted pipeline</div>
+                    </div>
+                </div>
+
+                <div class="features">
+                    <div class="feature-card">
+                        <h3>🛡️ Maximum Security</h3>
+                        <p>Data never exposed during computation</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🔐 TenSEAL CKKS</h3>
+                        <p>Advanced encryption for floating-point operations</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>☁️ Cloud Safe</h3>
+                        <p>Secure outsourcing to untrusted servers</p>
+                    </div>
+                </div>
+
+                <div class="example-queries">
+                    <h3>Example Queries & Responses</h3>
+                    <div class="query-example">
+                        <div class="query">Search encrypted genomic database for variant similarities</div>
+                        <div class="answer">Successfully retrieved 8 matches from fully encrypted genomic repository. All similarity computations performed on encrypted data using CKKS homomorphic encryption. Original genetic sequences never decrypted during search process, ensuring complete genomic privacy.</div>
+                    </div>
+                    <div class="query-example">
+                        <div class="query">Find matching clinical trials in encrypted database</div>
+                        <div class="answer">Identified 5 relevant clinical trials matching encrypted patient criteria. Homomorphic operations enabled eligibility matching without exposing individual patient characteristics or trial parameters to the search infrastructure.</div>
+                    </div>
+                    <div class="query-example">
+                        <div class="query">Query encrypted radiology report database</div>
+                        <div class="answer">Retrieved top 12 similar encrypted radiology findings. Semantic similarity computed entirely in encrypted space using TenSEAL. Zero-knowledge architecture ensures radiology images and reports remain encrypted end-to-end throughout the retrieval process.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="arch-4" class="architecture-display hidden">
+                <h2>4. Accelerated RAG (Baseline with HNSW + Hybrid + MMR)</h2>
+                <p>Performance-optimized architecture combining HNSW indexing, hybrid search strategies, and Maximal Marginal Relevance for diverse results.</p>
+                
+                <div class="flow-diagram">
+                    <div class="flow-box">
+                        Document Corpus
+                        <div class="info-popup">Clinical document collection</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        PySpark Processing
+                        <div class="info-popup">Parallel document processing</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Sentence Transformers
+                        <div class="info-popup">Generate semantic embeddings</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        FAISS with HNSW Index
+                        <div class="info-popup">Hierarchical Navigable Small World graphs for faster search</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        MMR Re-rank
+                        <div class="info-popup">Maximal Marginal Relevance ensures diverse, non-redundant results</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Top-K Results
+                        <div class="info-popup">Optimized, diverse clinical information</div>
+                    </div>
+                </div>
+
+                <div class="features">
+                    <div class="feature-card">
+                        <h3>🚀 HNSW Speed</h3>
+                        <p>10-100x faster than flat indexing</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🔀 Hybrid Search</h3>
+                        <p>Combine semantic and keyword matching (BM25)</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📚 Diverse Results</h3>
+                        <p>MMR reduces redundancy in retrieved documents</p>
+                    </div>
+                </div>
+
+                <div class="example-queries">
+                    <h3>Example Queries & Responses</h3>
+                    <div class="query-example">
+                        <div class="query">Best practices for managing sepsis in ICU</div>
+                        <div class="answer">Retrieved diverse clinical guidelines from multiple sources: (1) Early goal-directed therapy protocols from 2023 Surviving Sepsis Campaign, (2) Antimicrobial stewardship approaches, (3) Fluid resuscitation strategies, (4) Biomarker-guided treatment algorithms. MMR re-ranking ensures non-redundant, comprehensive coverage. Query time: 45ms.</div>
+                    </div>
+                    <div class="query-example">
+                        <div class="query">Differential diagnosis for acute abdominal pain</div>
+                        <div class="answer">Hybrid search combining semantic understanding and keyword matching returned: appendicitis (classic presentation), cholecystitis (right upper quadrant focus), pancreatitis (enzyme elevation patterns), bowel obstruction (imaging findings), and ruptured ectopic pregnancy (reproductive age considerations). BM25 ensures specific terminology matches while embeddings capture clinical context.</div>
+                    </div>
+                    <div class="query-example">
+                        <div class="query">Novel treatments for Alzheimer's disease</div>
+                        <div class="answer">HNSW acceleration enabled rapid retrieval across 2M+ documents: (1) Lecanemab phase 3 trial results, (2) Donanemab efficacy data, (3) Tau-targeting therapies in development, (4) Lifestyle intervention studies, (5) Combination therapy approaches. Diverse results span pharmacological and non-pharmacological interventions. Search latency: 38ms.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="arch-5" class="architecture-display hidden">
+                <h2>5. Optimized RAG (Accelerated RAG with DP)</h2>
+                <p>The best of both worlds - combining the speed and diversity of accelerated RAG with the privacy guarantees of differential privacy.</p>
+                
+                <div class="flow-diagram">
+                    <div class="flow-box">
+                        Document Corpus
+                        <div class="info-popup">Source clinical documents</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        PySpark Processing
+                        <div class="info-popup">Distributed processing pipeline</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Sentence Transformers
+                        <div class="info-popup">Generate embeddings</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Add Gaussian Noise (ε-DP)
+                        <div class="info-popup">Apply differential privacy protection</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        FAISS with HNSW Index
+                        <div class="info-popup">Fast similarity search on private embeddings</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        MMR Re-rank
+                        <div class="info-popup">Diversify results while maintaining privacy</div>
+                    </div>
+                    <span class="flow-arrow">→</span>
+                    <div class="flow-box">
+                        Top-K Results
+                        <div class="info-popup">Fast, diverse, and private results</div>
+                    </div>
+                </div>
+
+                <div class="features">
+                    <div class="feature-card">
+                        <h3>⚡ High Performance</h3>
+                        <p>HNSW indexing for speed at scale</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🔒 Privacy Protected</h3>
+                        <p>Differential privacy guarantees</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>🎯 Optimal Quality</h3>
+                        <p>Hybrid search + MMR for best results</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>💡 Production Ready</h3>
+                        <p>Balanced trade-offs for real-world deployment</p>
+                    </div>
+                </div>
+
+                <div class="example-queries">
+                    <h3>Example Queries & Responses</h3>
+                    <div class="query-example">
+                        <div class="query">Clinical decision support for complex poly-pharmacy cases</div>
+                        <div class="answer">Retrieved 15 diverse, privacy-protected case studies with similar medication profiles. Hybrid search identified both semantically related cases and exact drug interaction patterns. MMR ensured coverage across different patient demographics. Privacy budget ε=1.5 maintained while achieving 52ms query latency with HNSW indexing.</div>
+                    </div>
+                    <div class="query-example">
+                        <div class="query">Risk stratification for post-operative complications</div>
+                        <div class="answer">Analyzed 847 de-identified surgical outcomes with differential privacy protection. Combined BM25 for specific complication terms and semantic search for related risk factors. Results include: infection risk scores, thromboembolism patterns, and cardiovascular event predictors. Fast retrieval (41ms) with formal privacy guarantees prevents patient re-identification.</div>
+                    </div>
+                    <div class="query-example">
+                        <div class="query">Evidence-based protocols for pediatric emergency care</div>
+                        <div class="answer">HNSW-accelerated search across privacy-protected pediatric databases returned diverse guidelines: trauma management (weight-based dosing), respiratory distress protocols, seizure management algorithms, and anaphylaxis treatment pathways. MMR diversification ensures comprehensive coverage without redundant recommendations. Query completed in 47ms with ε=2.0 privacy guarantee.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="contact-section">
+                <h2>Meet Our Team</h2>
+                <p>Connect with the experts behind Clinical RAG Systems</p>
+                <div class="team-members">
+                    <a href="https://www.linkedin.com/in/pradyum-kumar/" target="_blank" class="linkedin-button">
+                        <div class="linkedin-icon">in</div>
+                        <div class="name">Pradyumna Kumar</div>
+                        <div class="role">Data & AI Engineer</div>
+                    </a>
+                    <a href="https://www.linkedin.com/in/pranitha-athukuri" target="_blank" class="linkedin-button">
+                        <div class="linkedin-icon">in</div>
+                        <div class="name">Pranitha Athukuri</div>
+                        <!-- <div class="role">Privacy & Security Lead</div> -->
+                    </a>
+                    <a href="https://www.linkedin.com/in/purna-chandu-anukula" target="_blank" class="linkedin-button">
+                        <div class="linkedin-icon">in</div>
+                        <div class="name">Purna Chandu Anukula</div>
+                        <!-- <div class="role">Clinical Informatics</div> -->
+                    </a>
+                    <a href="https://www.linkedin.com/in/saisruti-dandibhatla-a05ab7aa" target="_blank" class="linkedin-button">
+                        <div class="linkedin-icon">in</div>
+                        <div class="name">Sai Sruti Dandibhatla</div>
+                        <!-- <div class="role">ML Engineering Lead</div> -->
+                    </a>
+                    <a href="https://www.linkedin.com/in/srinivasan-subramanian-43b951b9" target="_blank" class="linkedin-button">
+                        <div class="linkedin-icon">in</div>
+                        <div class="name">Srinivasan Subramanian</div>
+                        <!-- <div class="role">NLP Specialist</div> -->
+                    </a>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
-        // CUSTOMIZE THIS ARRAY WITH YOUR TEAM MEMBERS
-        const teamMembers = [
-            {
-                name: "Pradyumna Kumar",
-                linkedin: "https://www.linkedin.com/in/pradyum-kumar/"
-            },
-            {
-                name: "Pranitha Athukuri",
-                linkedin: "https://www.linkedin.com/in/pranitha-athukuri"
-            },
-            {
-                name: "Purna Chandu Anukula",
-                linkedin: "https://www.linkedin.com/in/purna-chandu-anukula"
-            },
-            {
-                name: "Sai Sruti Dandibhatla",
-                linkedin: "https://www.linkedin.com/in/saisruti-dandibhatla-a05ab7aa"
-            },
-            {
-                name: "Srinivasan Subramanian",
-                linkedin: "https://www.linkedin.com/in/srinivasan-subramanian-43b951b9"
+        function showArchitecture(num) {
+            // Hide all architectures
+            for (let i = 1; i <= 5; i++) {
+                document.getElementById('arch-' + i).classList.add('hidden');
             }
-            // Add more team members as needed
-        ];
-
-        // Generate links dynamically
-        const linksList = document.getElementById('linksList');
-        
-        teamMembers.forEach(member => {
-            const linkItem = document.createElement('a');
-            linkItem.href = member.linkedin;
-            linkItem.className = 'link-item';
-            linkItem.target = '_blank';
-            linkItem.rel = 'noopener noreferrer';
             
-            linkItem.innerHTML = `
-                <span class="name">${member.name}</span>
-                <span class="linkedin-tag">
-                    <svg class="linkedin-icon" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-                    </svg>
-                    View LinkedIn Profile
-                </span>
-            `;
+            // Remove active class from all buttons
+            const buttons = document.querySelectorAll('.arch-button');
+            buttons.forEach(btn => btn.classList.remove('active'));
             
-            linksList.appendChild(linkItem);
-        });
+            // Show selected architecture
+            document.getElementById('arch-' + num).classList.remove('hidden');
+            
+            // Add active class to clicked button
+            buttons[num - 1].classList.add('active');
+        }
     </script>
 </body>
 </html>
