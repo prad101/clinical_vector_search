@@ -12,13 +12,12 @@ from rank_bm25 import BM25Okapi
 from sklearn.metrics.pairwise import cosine_similarity
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-SRC_ROOT = os.path.dirname(CURRENT_DIR)  # .../src
+SRC_ROOT = os.path.dirname(CURRENT_DIR) 
 if SRC_ROOT not in sys.path:
     sys.path.insert(0, SRC_ROOT)
 
 from pipeline.utils import normalize_rows, norm_vec
 
-# Immediately make FAISS single threaded to avoid macOS segfaults
 try:
     faiss.mp_set_num_threads(1)
 except Exception:
@@ -27,12 +26,7 @@ except Exception:
     except Exception:
         pass
 
-# Also limit sentence-transformers parallelism via environment
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-
-# ============================================================
-# Configuration
-# ============================================================
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_PATH = os.path.join(PROJECT_ROOT, "src", "dataset", "medical_transcriptions.csv")
@@ -54,20 +48,13 @@ QUERIES = [
 
 TOP_K = 10
 
-
-# ============================================================
-# Utility Functions
-# ============================================================
-
 def timed(fn, *args, **kwargs):
-    """Time a function call and return (result, latency_ms)."""
     t0 = time.time()
     out = fn(*args, **kwargs)
     return out, (time.time() - t0) * 1000.0
 
 
 def ndcg_at_k(ranks, k):
-    """Compute NDCG@k assuming rank positions as relevance."""
     ranks = np.array(ranks)[:k]
     gains = 1.0 / np.log2(np.arange(2, len(ranks) + 2))
     return float(np.sum(gains * ranks) / np.sum(gains))
@@ -84,7 +71,7 @@ def true_ndcg_at_k(pred, gold, k):
     gains = rel / np.log2(np.arange(2, k + 2))
     dcg = gains.sum()
 
-    # IDCG (ideal ranking: all 1's)
+    # IDCG
     ideal = np.ones(min(k, len(gold_set)), dtype=np.float32)
     ideal_gains = ideal / np.log2(np.arange(2, len(ideal) + 2))
     idcg = ideal_gains.sum()
@@ -99,11 +86,6 @@ def index_agreement(ref, other):
     matches = sum(1 for a, b in zip(ref, other) if a == b)
     return matches / len(ref)
 
-
-# ============================================================
-# Additional Metrics
-# ============================================================
-
 def rank_movement(ref_ids, method_ids):
     """Mean absolute rank difference comparing method vs baseline."""
     rank_map = {doc_id: i for i, doc_id in enumerate(ref_ids)}
@@ -117,7 +99,6 @@ def rank_movement(ref_ids, method_ids):
 
 
 def diversity_score(vecs):
-    """1 - average pairwise cosine similarity among the top-k results."""
     if len(vecs) <= 1:
         return 0.0
     sims = cosine_similarity(vecs)
@@ -126,10 +107,7 @@ def diversity_score(vecs):
 
 
 def geometry_distortion(base_vecs, method_vecs, sample_size=300):
-    """
-    Measures how much method embeddings distort geometry vs baseline.
-    Uses random subset of points.
-    """
+
     n = min(len(base_vecs), len(method_vecs), sample_size)
     idx = np.random.choice(len(base_vecs), n, replace=False)
 
@@ -142,19 +120,13 @@ def geometry_distortion(base_vecs, method_vecs, sample_size=300):
             mj = method_vecs[idx[j]]
 
             cos_base = float(np.dot(bi, bj))
-            cos_meth = float(np.dot(mj, mj))  # bug: fix to np.dot(mi, mj)
-            # Wait, need correct; replace above line
-            # but we can't edit code inside code snippet – fix before final
-            # I'll correct below in final script.
+            cos_meth = float(np.dot(mj, mj))  
             diffs.append(abs(cos_base - cos_meth))
     return float(np.mean(diffs))
 
 
 def query_robustness(search_fn, query_text, k=TOP_K):
-    """
-    Measures stability of a method under a small perturbation of the query.
-    search_fn: function(query_string) -> list of top-k doc ids
-    """
+
     words = query_text.split()
     if len(words) > 4:
         drop_idx = np.random.randint(0, len(words))
@@ -173,7 +145,6 @@ def query_robustness(search_fn, query_text, k=TOP_K):
     return float(overlap)
 
 
-# Fix geometry_distortion bug: redefine correctly
 def geometry_distortion(base_vecs, method_vecs, sample_size=300):
     n = min(len(base_vecs), len(method_vecs), sample_size)
     idx = np.random.choice(len(base_vecs), n, replace=False)
@@ -190,19 +161,12 @@ def geometry_distortion(base_vecs, method_vecs, sample_size=300):
             diffs.append(abs(cos_base - cos_meth))
     return float(np.mean(diffs))
 
-
-# ============================================================
-# Build all embeddings + indexes fresh
-# ============================================================
-
 def build_all(data_path, model_name):
     print("Loading dataset with pandas (no Spark)...")
     raw = pd.read_csv(data_path)
 
-    # Normalize column names to lowercase for robustness
     raw.columns = [c.lower() for c in raw.columns]
 
-    # Map original MTSamples schema to the fields we need
     col_name = "name" if "name" in raw.columns else None
     col_gender = "gender" if "gender" in raw.columns else None
     col_age = "age" if "age" in raw.columns else None
@@ -221,7 +185,6 @@ def build_all(data_path, model_name):
     if missing_core:
         raise ValueError(f"CSV missing expected MTSamples columns: {missing_core}")
 
-    # Build a working DataFrame with unified column names
     pdf = pd.DataFrame({
         "name": raw[col_name],
         "gender": raw[col_gender],
@@ -231,15 +194,13 @@ def build_all(data_path, model_name):
         "transcription": raw[col_trans],
     })
 
-    # Construct `text` like load_mtsamples_df: specialty + transcription
     pdf["text"] = pdf.apply(
         lambda x: f"{x['medical_specialty']}, {x['transcription']}"
         if pd.notnull(x["medical_specialty"])
         else x["transcription"],
         axis=1,
     )
-
-    # Drop duplicates on text to match pipeline behavior
+    
     pdf = pdf.drop_duplicates(subset=["text"]).reset_index(drop=True)
 
     print("Embedding dataset...")
@@ -252,12 +213,12 @@ def build_all(data_path, model_name):
     embeddings = normalize_rows(np.array(embeddings, dtype=np.float32))
     pdf["vec"] = list(embeddings)
 
-    # ------------ Baseline index (FlatIP) -------------
+    # Baseline index (FlatIP)
     d = embeddings.shape[1]
     base_index = faiss.IndexFlatIP(d)
     base_index.add(embeddings)
 
-    # ------------ Shared attribute embeddings -------------
+    # Shared attribute embeddings
     attr_texts = [
         f"{n} {g} {a} {c}"
         for n, g, a, c in zip(pdf["name"], pdf["gender"], pdf["age"], pdf["city"])
@@ -269,44 +230,37 @@ def build_all(data_path, model_name):
     noisy_attr = attr_emb + np.random.normal(0, sigma, attr_emb.shape).astype(np.float32)
     noisy_attr = normalize_rows(noisy_attr)
 
-    # ------------ DP (30 percent attribute mix) -------------
+    # DP (30 percent attribute mix)
     dp_vecs = normalize_rows(
         np.hstack([embeddings * 0.7, noisy_attr * 0.3]).astype(np.float32)
     )
     dp_index = faiss.IndexFlatIP(dp_vecs.shape[1])
     dp_index.add(dp_vecs)
 
-    # ------------ Optimal RAG (40 percent attribute mix) -------------
+    # Optimal RAG (40 percent mix)
     opt_vecs = normalize_rows(
         np.hstack([embeddings * 0.6, noisy_attr * 0.4]).astype(np.float32)
     )
     opt_index = faiss.IndexFlatIP(opt_vecs.shape[1])
     opt_index.add(opt_vecs)
 
-    # ------------ RAG Structures (BM25 + FAISS + MMR) -------------
+    # RAG Structures (BM25 + FAISS + MMR)
     tokenized = [t.lower().split() for t in pdf["text"]]
     bm25 = BM25Okapi(tokenized)
 
-    # Use FlatIP instead of HNSW for macOS stability
+    # Use FlatIP instead of HNSW for macOS
     rag_index = faiss.IndexFlatIP(d)
     rag_index.add(embeddings)
 
     return pdf, embeddings, dp_vecs, opt_vecs, base_index, dp_index, opt_index, bm25, rag_index, model
 
-
-# ============================================================
-# Compute metrics
-# ============================================================
-
 def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
                  base_index, dp_index, opt_index, bm25, rag_index, model):
     results = []
 
-    # Global geometry distortion per representation
     geom_dp_global = geometry_distortion(embeddings, dp_vecs)
     geom_opt_global = geometry_distortion(embeddings, opt_vecs)
 
-    # FHE geometry: use one fixed projection and subset for analysis
     fhe_sample = min(256, embeddings.shape[0])
     fhe_idx = np.random.choice(embeddings.shape[0], fhe_sample, replace=False)
     d_target_geom = 64
@@ -320,22 +274,13 @@ def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
     for query in QUERIES:
         print(f"\nEvaluating: {query}")
 
-        # ------------------------------------
-        # Query embedding (shared)
-        # ------------------------------------
         qv = model.encode([query])
         qv = normalize_rows(qv.astype(np.float32))
 
-        # ------------------------------------
-        # BASELINE
-        # ------------------------------------
         (_, lat_base) = timed(base_index.search, qv, TOP_K)
         _, I_base = base_index.search(qv, TOP_K)
         base_ids = I_base[0]
 
-        # ------------------------------------
-        # DP MODE (30 percent)
-        # ------------------------------------
         text_dim = qv.shape[1]
         dp_dim = dp_index.d
         if dp_dim > text_dim:
@@ -348,10 +293,7 @@ def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
         (_, lat_dp) = timed(dp_index.search, qv_dp, TOP_K)
         _, I_dp = dp_index.search(qv_dp, TOP_K)
         dp_ids = I_dp[0]
-
-        # ------------------------------------
-        # FHE MODE (subset plus projection)
-        # ------------------------------------
+        
         num_docs = embeddings.shape[0]
         fhe_cand_size = min(128, num_docs)
         fhe_cand_ids = list(range(fhe_cand_size))
@@ -387,21 +329,16 @@ def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
         fhe_order = np.argsort(fhe_scores)[::-1][:TOP_K]
         fhe_ids = [fhe_cand_ids[i] for i in fhe_order]
 
-        # ------------------------------------
-        # ENHANCED RAG (old RAG)
-        # ------------------------------------
         bm25_ids = bm25.get_top_n(query.split(), list(range(len(pdf))), TOP_K * 4)
 
         (_, lat_rag_raw) = timed(rag_index.search, qv, TOP_K * 4)
         _, I_rag = rag_index.search(qv, TOP_K * 4)
         vec_ids = I_rag[0].tolist()
 
-        # merge candidates
         cand = list(dict.fromkeys(bm25_ids + vec_ids))
         cand_vecs = embeddings[cand]
         sims = cand_vecs @ qv.ravel()
 
-        # MMR
         selected = []
         candidate_ids = list(range(len(cand)))
 
@@ -420,9 +357,6 @@ def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
 
         rag_ids = [cand[i] for i in selected]
 
-        # ------------------------------------
-        # OPTIMAL RAG (DP 40 percent noise + RAG)
-        # ------------------------------------
         opt_dim = opt_index.d
         if opt_dim > text_dim:
             opt_attr_dim = opt_dim - text_dim
@@ -458,9 +392,6 @@ def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
         opt_ids = [opt_cand[i] for i in opt_selected]
         lat_opt = lat_opt_dense
 
-        # ------------------------------------
-        # Basic NDCG and RAG improvement
-        # ------------------------------------
         def rank_positions(ref, pred):
             mapping = {doc_id: i + 1 for i, doc_id in enumerate(ref)}
             return [mapping.get(x, 0) for x in pred]
@@ -476,9 +407,6 @@ def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
         rag_improvement_enhanced = ndcg_enhanced - ndcg_dp
         rag_improvement_optimal = ndcg_optimal - ndcg_dp
 
-        # ------------------------------------
-        # New metrics for all methods
-        # ------------------------------------
         # Rank movement vs Baseline
         rms_dp = rank_movement(base_ids, dp_ids)
         rms_rag = rank_movement(base_ids, rag_ids)
@@ -493,14 +421,14 @@ def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
         div_opt = diversity_score(embeddings[opt_ids])
         div_fhe = diversity_score(embeddings[fhe_ids])
 
-        # Geometry distortion (global constants reused per query)
+        # Geometry distortion
         geom_base = 0.0
         geom_rag = 0.0
         geom_dp = geom_dp_global
         geom_opt = geom_opt_global
         geom_fhe = geom_fhe_global
 
-        # Query robustness per method
+        # Query robustness
         def search_baseline(qtxt):
             q = normalize_rows(model.encode([qtxt]).astype(np.float32))
             _, I = base_index.search(q, TOP_K)
@@ -586,9 +514,6 @@ def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
         robust_opt = query_robustness(search_opt, query)
         robust_fhe = query_robustness(search_fhe_plain, query)
 
-        # ------------------------------------
-        # Collect results
-        # ------------------------------------
         results.append({
             "query": query,
 
@@ -599,7 +524,7 @@ def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
             "latency_enhanced_rag": lat_rag_raw,
             "latency_optimal_rag": lat_opt,
 
-            # NDCG (still in CSV for reference)
+            # NDCG
             "ndcg_dp": ndcg_dp,
             "ndcg_enhanced_rag": ndcg_rag,
             "ndcg_optimal_rag": ndcg_opt,
@@ -622,7 +547,7 @@ def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
             "diversity_optimal_rag": div_opt,
             "diversity_fhe": div_fhe,
 
-            # Geometry distortion (global)
+            # Geometry distortion
             "geometry_baseline": geom_base,
             "geometry_dp": geom_dp,
             "geometry_enhanced_rag": geom_rag,
@@ -639,13 +564,8 @@ def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
 
     return pd.DataFrame(results)
 
-
-# ============================================================
-# Plotting
-# ============================================================
-
 def plot_results(df):
-    # LATENCY (log scale) across all methods
+    
     plt.figure(figsize=(9, 5))
     modes = [
         "latency_baseline",
@@ -728,11 +648,6 @@ def plot_results(df):
     plt.tight_layout()
     plt.savefig(os.path.join(PLOTS_DIR, "query_robustness.png"))
     plt.close()
-
-
-# ============================================================
-# Main
-# ============================================================
 
 def main():
     print("Building full environment fresh...")
