@@ -12,19 +12,27 @@ from rank_bm25 import BM25Okapi
 from sklearn.metrics.pairwise import cosine_similarity
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-SRC_ROOT = os.path.dirname(CURRENT_DIR)
+SRC_ROOT = os.path.dirname(CURRENT_DIR)  # .../src
 if SRC_ROOT not in sys.path:
     sys.path.insert(0, SRC_ROOT)
 
 from pipeline.utils import normalize_rows, norm_vec
 
-# Force FAISS single-threaded for mac stability
+# Immediately make FAISS single threaded to avoid macOS segfaults
 try:
-    faiss.omp_set_num_threads(1)
-except:
-    pass
+    faiss.mp_set_num_threads(1)
+except Exception:
+    try:
+        faiss.omp_set_num_threads(1)
+    except Exception:
+        pass
 
+# Also limit sentence-transformers parallelism via environment
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+# ============================================================
+# Configuration
+# ============================================================
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_PATH = os.path.join(PROJECT_ROOT, "src", "dataset", "medical_transcriptions.csv")
@@ -45,7 +53,6 @@ QUERIES = [
 ]
 
 TOP_K = 10
-SAFE_MODE = False
 
 
 # ============================================================
@@ -53,170 +60,269 @@ SAFE_MODE = False
 # ============================================================
 
 def timed(fn, *args, **kwargs):
+    """Time a function call and return (result, latency_ms)."""
     t0 = time.time()
     out = fn(*args, **kwargs)
     return out, (time.time() - t0) * 1000.0
 
 
 def ndcg_at_k(ranks, k):
+    """Compute NDCG@k assuming rank positions as relevance."""
     ranks = np.array(ranks)[:k]
     gains = 1.0 / np.log2(np.arange(2, len(ranks) + 2))
-    return np.sum(gains * ranks) / np.sum(gains)
+    return float(np.sum(gains * ranks) / np.sum(gains))
 
 
 def index_agreement(ref, other):
+    """Percentage of exact index matches."""
+    ref = list(ref)
+    other = list(other)
     matches = sum(1 for a, b in zip(ref, other) if a == b)
     return matches / len(ref)
 
 
 # ============================================================
-# NEW METRICS
+# Additional Metrics
 # ============================================================
 
 def rank_movement(ref_ids, method_ids):
+    """Mean absolute rank difference comparing method vs baseline."""
     rank_map = {doc_id: i for i, doc_id in enumerate(ref_ids)}
     diffs = []
-
     for method_rank, doc in enumerate(method_ids):
         if doc in rank_map:
             diffs.append(abs(method_rank - rank_map[doc]))
         else:
             diffs.append(len(ref_ids))
-
     return float(np.mean(diffs))
 
 
 def diversity_score(vecs):
+    """1 - average pairwise cosine similarity among the top-k results."""
     if len(vecs) <= 1:
         return 0.0
     sims = cosine_similarity(vecs)
-    cohesion = np.mean(sims)
+    cohesion = float(np.mean(sims))
     return float(1.0 - cohesion)
 
 
-def geometry_distortion(base_vecs, dp_index, sample_size=300):
-    n = min(len(base_vecs), sample_size)
+def geometry_distortion(base_vecs, method_vecs, sample_size=300):
+    """
+    Measures how much method embeddings distort geometry vs baseline.
+    Uses random subset of points.
+    """
+    n = min(len(base_vecs), len(method_vecs), sample_size)
     idx = np.random.choice(len(base_vecs), n, replace=False)
 
     diffs = []
     for i in range(n - 1):
-        base_i = base_vecs[idx[i]]
-        dp_i = dp_index.reconstruct(idx[i])
-
+        bi = base_vecs[idx[i]]
+        mi = method_vecs[idx[i]]
         for j in range(i + 1, n):
-            base_j = base_vecs[idx[j]]
-            dp_j = dp_index.reconstruct(idx[j])
+            bj = base_vecs[idx[j]]
+            mj = method_vecs[idx[j]]
 
-            cos_base = float(np.dot(base_i, base_j))
-            cos_dp = float(np.dot(dp_i, dp_j))
-            diffs.append(abs(cos_base - cos_dp))
-
+            cos_base = float(np.dot(bi, bj))
+            cos_meth = float(np.dot(mj, mj))  # bug: fix to np.dot(mi, mj)
+            # Wait, need correct; replace above line
+            # but we can't edit code inside code snippet – fix before final
+            # I'll correct below in final script.
+            diffs.append(abs(cos_base - cos_meth))
     return float(np.mean(diffs))
 
 
-def query_robustness(query_text, model, qv_orig, embeddings, index, k=10):
-    # Drop one random word
+def query_robustness(search_fn, query_text, k=TOP_K):
+    """
+    Measures stability of a method under a small perturbation of the query.
+    search_fn: function(query_string) -> list of top-k doc ids
+    """
     words = query_text.split()
     if len(words) > 4:
         drop_idx = np.random.randint(0, len(words))
-        perturbed = words[:drop_idx] + words[drop_idx+1:]
-        perturbed_query = " ".join(perturbed)
+        perturbed = words[:drop_idx] + words[drop_idx + 1:]
+        pert_query = " ".join(perturbed)
     else:
-        perturbed_query = query_text
+        pert_query = query_text
 
-    qv_pert = model.encode([perturbed_query])
-    qv_pert = normalize_rows(qv_pert.astype(np.float32))
+    ids_orig = search_fn(query_text)
+    ids_pert = search_fn(pert_query)
 
-    _, I_orig = index.search(qv_orig, k)
-    _, I_pert = index.search(qv_pert, k)
+    if not ids_orig or not ids_pert:
+        return 0.0
 
-    ids_orig = set(I_orig[0])
-    ids_pert = set(I_pert[0])
+    overlap = len(set(ids_orig).intersection(set(ids_pert))) / float(k)
+    return float(overlap)
 
-    return float(len(ids_orig.intersection(ids_pert)) / k)
+
+# Fix geometry_distortion bug: redefine correctly
+def geometry_distortion(base_vecs, method_vecs, sample_size=300):
+    n = min(len(base_vecs), len(method_vecs), sample_size)
+    idx = np.random.choice(len(base_vecs), n, replace=False)
+
+    diffs = []
+    for i in range(n - 1):
+        bi = base_vecs[idx[i]]
+        mi = method_vecs[idx[i]]
+        for j in range(i + 1, n):
+            bj = base_vecs[idx[j]]
+            mj = method_vecs[idx[j]]
+            cos_base = float(np.dot(bi, bj))
+            cos_meth = float(np.dot(mi, mj))
+            diffs.append(abs(cos_base - cos_meth))
+    return float(np.mean(diffs))
 
 
 # ============================================================
-# Build embeddings and indexes
+# Build all embeddings + indexes fresh
 # ============================================================
 
 def build_all(data_path, model_name):
+    print("Loading dataset with pandas (no Spark)...")
     raw = pd.read_csv(data_path)
+
+    # Normalize column names to lowercase for robustness
     raw.columns = [c.lower() for c in raw.columns]
 
-    col_trans = "transcription"
-    col_specialty = "medical_specialty"
+    # Map original MTSamples schema to the fields we need
+    col_name = "name" if "name" in raw.columns else None
+    col_gender = "gender" if "gender" in raw.columns else None
+    col_age = "age" if "age" in raw.columns else None
+    col_city = "city" if "city" in raw.columns else None
+    col_specialty = "medical_specialty" if "medical_specialty" in raw.columns else None
+    col_trans = "transcription" if "transcription" in raw.columns else None
 
+    missing_core = [c for c, v in {
+        "name": col_name,
+        "gender": col_gender,
+        "age": col_age,
+        "city": col_city,
+        "medical_specialty": col_specialty,
+        "transcription": col_trans,
+    }.items() if v is None]
+    if missing_core:
+        raise ValueError(f"CSV missing expected MTSamples columns: {missing_core}")
+
+    # Build a working DataFrame with unified column names
     pdf = pd.DataFrame({
-        "name": raw["name"],
-        "gender": raw["gender"],
-        "age": raw["age"],
-        "city": raw["city"],
+        "name": raw[col_name],
+        "gender": raw[col_gender],
+        "age": raw[col_age],
+        "city": raw[col_city],
         "medical_specialty": raw[col_specialty],
         "transcription": raw[col_trans],
     })
 
+    # Construct `text` like load_mtsamples_df: specialty + transcription
     pdf["text"] = pdf.apply(
         lambda x: f"{x['medical_specialty']}, {x['transcription']}"
-        if pd.notnull(x["medical_specialty"]) else x["transcription"],
-        axis=1
+        if pd.notnull(x["medical_specialty"])
+        else x["transcription"],
+        axis=1,
     )
 
+    # Drop duplicates on text to match pipeline behavior
     pdf = pdf.drop_duplicates(subset=["text"]).reset_index(drop=True)
 
+    print("Embedding dataset...")
     model = SentenceTransformer(model_name)
-    emb = model.encode(pdf["text"].tolist(), batch_size=32, show_progress_bar=True)
-    emb = normalize_rows(np.array(emb, dtype=np.float32))
-    pdf["vec"] = list(emb)
+    embeddings = model.encode(
+        pdf["text"].tolist(),
+        batch_size=32,
+        show_progress_bar=True,
+    )
+    embeddings = normalize_rows(np.array(embeddings, dtype=np.float32))
+    pdf["vec"] = list(embeddings)
 
-    d = emb.shape[1]
+    # ------------ Baseline index (FlatIP) -------------
+    d = embeddings.shape[1]
     base_index = faiss.IndexFlatIP(d)
-    base_index.add(emb)
+    base_index.add(embeddings)
 
-    # DP vectors
-    attr_texts = [f"{n} {g} {a} {c}" for n, g, a, c in zip(pdf["name"], pdf["gender"], pdf["age"], pdf["city"])]
-    attr_emb = normalize_rows(model.encode(attr_texts).astype(np.float32))
-    noisy = normalize_rows(attr_emb + np.random.normal(0, 0.15, attr_emb.shape).astype(np.float32))
+    # ------------ Shared attribute embeddings -------------
+    attr_texts = [
+        f"{n} {g} {a} {c}"
+        for n, g, a, c in zip(pdf["name"], pdf["gender"], pdf["age"], pdf["city"])
+    ]
+    attr_emb = model.encode(attr_texts, batch_size=32, show_progress_bar=False)
+    attr_emb = normalize_rows(attr_emb.astype(np.float32))
 
-    dp_vecs = normalize_rows(np.hstack([emb * 0.7, noisy * 0.3]).astype(np.float32))
+    sigma = 0.15
+    noisy_attr = attr_emb + np.random.normal(0, sigma, attr_emb.shape).astype(np.float32)
+    noisy_attr = normalize_rows(noisy_attr)
+
+    # ------------ DP (30 percent attribute mix) -------------
+    dp_vecs = normalize_rows(
+        np.hstack([embeddings * 0.7, noisy_attr * 0.3]).astype(np.float32)
+    )
     dp_index = faiss.IndexFlatIP(dp_vecs.shape[1])
     dp_index.add(dp_vecs)
 
-    # RAG
-    tokenized = [txt.lower().split() for txt in pdf["text"]]
+    # ------------ Optimal RAG (40 percent attribute mix) -------------
+    opt_vecs = normalize_rows(
+        np.hstack([embeddings * 0.6, noisy_attr * 0.4]).astype(np.float32)
+    )
+    opt_index = faiss.IndexFlatIP(opt_vecs.shape[1])
+    opt_index.add(opt_vecs)
+
+    # ------------ RAG Structures (BM25 + FAISS + MMR) -------------
+    tokenized = [t.lower().split() for t in pdf["text"]]
     bm25 = BM25Okapi(tokenized)
 
+    # Use FlatIP instead of HNSW for macOS stability
     rag_index = faiss.IndexFlatIP(d)
-    rag_index.add(emb)
+    rag_index.add(embeddings)
 
-    return pdf, emb, base_index, dp_index, bm25, rag_index, model
+    return pdf, embeddings, dp_vecs, opt_vecs, base_index, dp_index, opt_index, bm25, rag_index, model
 
 
 # ============================================================
-# Evaluate all
+# Compute metrics
 # ============================================================
 
-def evaluate_all(pdf, emb, base_index, dp_index, bm25, rag_index, model):
+def evaluate_all(pdf, embeddings, dp_vecs, opt_vecs,
+                 base_index, dp_index, opt_index, bm25, rag_index, model):
     results = []
+
+    # Global geometry distortion per representation
+    geom_dp_global = geometry_distortion(embeddings, dp_vecs)
+    geom_opt_global = geometry_distortion(embeddings, opt_vecs)
+
+    # FHE geometry: use one fixed projection and subset for analysis
+    fhe_sample = min(256, embeddings.shape[0])
+    fhe_idx = np.random.choice(embeddings.shape[0], fhe_sample, replace=False)
+    d_target_geom = 64
+    R_fhe_geom = np.random.normal(
+        0, 1 / np.sqrt(embeddings.shape[1]),
+        size=(embeddings.shape[1], d_target_geom)
+    ).astype(np.float32)
+    emb_fhe_geom = normalize_rows((embeddings[fhe_idx] @ R_fhe_geom).astype(np.float32))
+    geom_fhe_global = geometry_distortion(embeddings[fhe_idx], emb_fhe_geom)
 
     for query in QUERIES:
         print(f"\nEvaluating: {query}")
 
+        # ------------------------------------
+        # Query embedding (shared)
+        # ------------------------------------
         qv = model.encode([query])
         qv = normalize_rows(qv.astype(np.float32))
 
+        # ------------------------------------
         # BASELINE
+        # ------------------------------------
         (_, lat_base) = timed(base_index.search, qv, TOP_K)
         _, I_base = base_index.search(qv, TOP_K)
         base_ids = I_base[0]
 
-        # DP
-        dp_dim = dp_index.d
+        # ------------------------------------
+        # DP MODE (30 percent)
+        # ------------------------------------
         text_dim = qv.shape[1]
+        dp_dim = dp_index.d
         if dp_dim > text_dim:
-            qv_dp = normalize_rows(
-                np.hstack([qv * 0.7, np.zeros((1, dp_dim - text_dim))])
-            )
+            attr_dim = dp_dim - text_dim
+            qv_zero_attr = np.zeros((1, attr_dim), dtype=np.float32)
+            qv_dp = normalize_rows(np.hstack([qv * 0.7, qv_zero_attr * 0.3]))
         else:
             qv_dp = qv
 
@@ -224,146 +330,382 @@ def evaluate_all(pdf, emb, base_index, dp_index, bm25, rag_index, model):
         _, I_dp = dp_index.search(qv_dp, TOP_K)
         dp_ids = I_dp[0]
 
-        dp_drift = float(cosine_similarity(qv, qv_dp)[0][0])
+        # ------------------------------------
+        # FHE MODE (subset plus projection)
+        # ------------------------------------
+        num_docs = embeddings.shape[0]
+        fhe_cand_size = min(128, num_docs)
+        fhe_cand_ids = list(range(fhe_cand_size))
 
-        # FHE synthetic
         d_target = 64
-        R = np.random.normal(0, 1 / np.sqrt(qv.shape[1]), size=(qv.shape[1], d_target))
-        qv_small = normalize_rows(qv @ R)[0]
+        R = np.random.normal(
+            0, 1 / np.sqrt(qv.shape[1]),
+            size=(qv.shape[1], d_target)
+        ).astype(np.float32)
+
+        emb_fhe = normalize_rows((embeddings[fhe_cand_ids] @ R).astype(np.float32))
+
+        qv_small = qv @ R
+        qv_small = normalize_rows(qv_small)[0]
         qv_small = norm_vec(qv_small.astype(np.float32))
 
-        small_vecs = normalize_rows(np.random.randn(10, d_target).astype(np.float32))
-
-        ctx = ts.context(ts.SCHEME_TYPE.CKKS, poly_modulus_degree=8192,
-                         coeff_mod_bit_sizes=[60, 40, 40, 60])
+        ctx = ts.context(
+            ts.SCHEME_TYPE.CKKS,
+            poly_modulus_degree=8192,
+            coeff_mod_bit_sizes=[60, 40, 40, 60],
+        )
         ctx.global_scale = 2**40
         ctx.generate_galois_keys()
 
         enc_q = ts.ckks_vector(ctx, qv_small.tolist())
+
         fhe_scores = []
         t0 = time.time()
-        for v in small_vecs:
+        for v in emb_fhe:
             fhe_scores.append(enc_q.dot(v.tolist()).decrypt()[0])
         lat_fhe = (time.time() - t0) * 1000.0
-        fhe_ids = np.argsort(fhe_scores)[::-1][:TOP_K]
 
-        # RAG
-        bm_ids = bm25.get_top_n(query.split(), list(range(len(pdf))), TOP_K * 4)
-        (_, lat_rag) = timed(rag_index.search, qv, TOP_K * 4)
+        fhe_order = np.argsort(fhe_scores)[::-1][:TOP_K]
+        fhe_ids = [fhe_cand_ids[i] for i in fhe_order]
+
+        # ------------------------------------
+        # ENHANCED RAG (old RAG)
+        # ------------------------------------
+        bm25_ids = bm25.get_top_n(query.split(), list(range(len(pdf))), TOP_K * 4)
+
+        (_, lat_rag_raw) = timed(rag_index.search, qv, TOP_K * 4)
         _, I_rag = rag_index.search(qv, TOP_K * 4)
         vec_ids = I_rag[0].tolist()
 
-        cand = list(dict.fromkeys(bm_ids + vec_ids))
-        cand_vecs = emb[cand]
+        # merge candidates
+        cand = list(dict.fromkeys(bm25_ids + vec_ids))
+        cand_vecs = embeddings[cand]
         sims = cand_vecs @ qv.ravel()
 
+        # MMR
         selected = []
-        remain = list(range(len(cand)))
+        candidate_ids = list(range(len(cand)))
 
         while len(selected) < TOP_K:
             if len(selected) == 0:
                 best = int(np.argmax(sims))
             else:
                 selected_vecs = cand_vecs[selected]
-                diversity = cosine_similarity(cand_vecs[remain], selected_vecs).max(axis=1)
-                score = 0.7 * sims[remain] - 0.3 * diversity
-                best = remain[int(np.argmax(score))]
+                diversity = cosine_similarity(cand_vecs[candidate_ids], selected_vecs).max(axis=1)
+                score = 0.7 * sims[candidate_ids] - 0.3 * diversity
+                best_local = int(np.argmax(score))
+                best = candidate_ids[best_local]
+
             selected.append(best)
-            remain.remove(best)
+            candidate_ids.remove(best)
 
         rag_ids = [cand[i] for i in selected]
 
-        # NDCG & agreement
+        # ------------------------------------
+        # OPTIMAL RAG (DP 40 percent noise + RAG)
+        # ------------------------------------
+        opt_dim = opt_index.d
+        if opt_dim > text_dim:
+            opt_attr_dim = opt_dim - text_dim
+            qv_zero_attr_opt = np.zeros((1, opt_attr_dim), dtype=np.float32)
+            qv_opt = normalize_rows(np.hstack([qv * 0.6, qv_zero_attr_opt * 0.4]))
+        else:
+            qv_opt = qv
+
+        (_, lat_opt_dense) = timed(opt_index.search, qv_opt, TOP_K * 4)
+        _, I_opt = opt_index.search(qv_opt, TOP_K * 4)
+        opt_vec_ids = I_opt[0].tolist()
+
+        opt_cand = list(dict.fromkeys(bm25_ids + opt_vec_ids))
+        opt_cand_vecs = opt_vecs[opt_cand]
+        opt_sims = opt_cand_vecs @ qv_opt.ravel()
+
+        opt_selected = []
+        opt_candidate_ids = list(range(len(opt_cand)))
+
+        while len(opt_selected) < TOP_K:
+            if len(opt_selected) == 0:
+                best = int(np.argmax(opt_sims))
+            else:
+                selected_vecs_opt = opt_cand_vecs[opt_selected]
+                diversity_opt = cosine_similarity(opt_cand_vecs[opt_candidate_ids], selected_vecs_opt).max(axis=1)
+                score_opt = 0.7 * opt_sims[opt_candidate_ids] - 0.3 * diversity_opt
+                best_local = int(np.argmax(score_opt))
+                best = opt_candidate_ids[best_local]
+
+            opt_selected.append(best)
+            opt_candidate_ids.remove(best)
+
+        opt_ids = [opt_cand[i] for i in opt_selected]
+        lat_opt = lat_opt_dense
+
+        # ------------------------------------
+        # Basic NDCG and RAG improvement
+        # ------------------------------------
         def rank_positions(ref, pred):
-            m = {doc: i+1 for i, doc in enumerate(ref)}
-            return [m.get(x, 0) for x in pred]
+            mapping = {doc_id: i + 1 for i, doc_id in enumerate(ref)}
+            return [mapping.get(x, 0) for x in pred]
 
         ranks_dp = rank_positions(base_ids, dp_ids)
         ranks_rag = rank_positions(base_ids, rag_ids)
+        ranks_opt = rank_positions(base_ids, opt_ids)
 
         ndcg_dp = ndcg_at_k(ranks_dp, TOP_K)
         ndcg_rag = ndcg_at_k(ranks_rag, TOP_K)
+        ndcg_opt = ndcg_at_k(ranks_opt, TOP_K)
 
-        # NEW METRICS
+        rag_improvement_enhanced = ndcg_rag - ndcg_dp
+        rag_improvement_optimal = ndcg_opt - ndcg_dp
+
+        # ------------------------------------
+        # New metrics for all methods
+        # ------------------------------------
+        # Rank movement vs Baseline
         rms_dp = rank_movement(base_ids, dp_ids)
         rms_rag = rank_movement(base_ids, rag_ids)
+        rms_opt = rank_movement(base_ids, opt_ids)
         rms_fhe = rank_movement(base_ids, fhe_ids)
+        rms_base = 0.0
 
-        div_base = diversity_score(emb[base_ids])
-        div_dp = diversity_score(emb[dp_ids])
-        div_rag = diversity_score(emb[rag_ids])
+        # Diversity in baseline embedding space
+        div_base = diversity_score(embeddings[base_ids])
+        div_dp = diversity_score(embeddings[dp_ids])
+        div_rag = diversity_score(embeddings[rag_ids])
+        div_opt = diversity_score(embeddings[opt_ids])
+        div_fhe = diversity_score(embeddings[fhe_ids])
 
-        geom_dp = geometry_distortion(emb, dp_index)
+        # Geometry distortion (global constants reused per query)
+        geom_base = 0.0
+        geom_rag = 0.0
+        geom_dp = geom_dp_global
+        geom_opt = geom_opt_global
+        geom_fhe = geom_fhe_global
 
-        robustness = query_robustness(query, model, qv, emb, base_index)
+        # Query robustness per method
+        def search_baseline(qtxt):
+            q = normalize_rows(model.encode([qtxt]).astype(np.float32))
+            _, I = base_index.search(q, TOP_K)
+            return I[0].tolist()
 
+        def search_dp(qtxt):
+            q = normalize_rows(model.encode([qtxt]).astype(np.float32))
+            if dp_index.d > q.shape[1]:
+                attr_dim = dp_index.d - q.shape[1]
+                qz = np.zeros((1, attr_dim), dtype=np.float32)
+                q_dp_loc = normalize_rows(np.hstack([q * 0.7, qz * 0.3]))
+            else:
+                q_dp_loc = q
+            _, I = dp_index.search(q_dp_loc, TOP_K)
+            return I[0].tolist()
+
+        def search_rag(qtxt):
+            q = normalize_rows(model.encode([qtxt]).astype(np.float32))
+            bm_ids_loc = bm25.get_top_n(qtxt.split(), list(range(len(pdf))), TOP_K * 4)
+            _, I = rag_index.search(q, TOP_K * 4)
+            v_ids = I[0].tolist()
+            cand_loc = list(dict.fromkeys(bm_ids_loc + v_ids))
+            cvecs = embeddings[cand_loc]
+            sims_loc = cvecs @ q.ravel()
+
+            sel = []
+            cand_ids_loc = list(range(len(cand_loc)))
+            while len(sel) < TOP_K:
+                if len(sel) == 0:
+                    best = int(np.argmax(sims_loc))
+                else:
+                    svecs = cvecs[sel]
+                    divv = cosine_similarity(cvecs[cand_ids_loc], svecs).max(axis=1)
+                    score_loc = 0.7 * sims_loc[cand_ids_loc] - 0.3 * divv
+                    best_local = int(np.argmax(score_loc))
+                    best = cand_ids_loc[best_local]
+                sel.append(best)
+                cand_ids_loc.remove(best)
+            return [cand_loc[i] for i in sel]
+
+        def search_opt(qtxt):
+            q = normalize_rows(model.encode([qtxt]).astype(np.float32))
+            if opt_index.d > q.shape[1]:
+                attr_dim = opt_index.d - q.shape[1]
+                qz = np.zeros((1, attr_dim), dtype=np.float32)
+                q_opt_loc = normalize_rows(np.hstack([q * 0.6, qz * 0.4]))
+            else:
+                q_opt_loc = q
+
+            bm_ids_loc = bm25.get_top_n(qtxt.split(), list(range(len(pdf))), TOP_K * 4)
+            _, I = opt_index.search(q_opt_loc, TOP_K * 4)
+            v_ids = I[0].tolist()
+            cand_loc = list(dict.fromkeys(bm_ids_loc + v_ids))
+            cvecs = opt_vecs[cand_loc]
+            sims_loc = cvecs @ q_opt_loc.ravel()
+
+            sel = []
+            cand_ids_loc = list(range(len(cand_loc)))
+            while len(sel) < TOP_K:
+                if len(sel) == 0:
+                    best = int(np.argmax(sims_loc))
+                else:
+                    svecs = cvecs[sel]
+                    divv = cosine_similarity(cvecs[cand_ids_loc], svecs).max(axis=1)
+                    score_loc = 0.7 * sims_loc[cand_ids_loc] - 0.3 * divv
+                    best_local = int(np.argmax(score_loc))
+                    best = cand_ids_loc[best_local]
+                sel.append(best)
+                cand_ids_loc.remove(best)
+            return [cand_loc[i] for i in sel]
+
+        def search_fhe_plain(qtxt):
+            q = normalize_rows(model.encode([qtxt]).astype(np.float32))
+            q_small = normalize_rows(q @ R)[0]
+            q_small = norm_vec(q_small.astype(np.float32))
+            sims_f = emb_fhe @ q_small
+            order = np.argsort(sims_f)[::-1][:TOP_K]
+            return [fhe_cand_ids[i] for i in order]
+
+        robust_base = query_robustness(search_baseline, query)
+        robust_dp = query_robustness(search_dp, query)
+        robust_rag = query_robustness(search_rag, query)
+        robust_opt = query_robustness(search_opt, query)
+        robust_fhe = query_robustness(search_fhe_plain, query)
+
+        # ------------------------------------
+        # Collect results
+        # ------------------------------------
         results.append({
             "query": query,
-            "baseline_latency": lat_base,
-            "dp_latency": lat_dp,
-            "fhe_latency": lat_fhe,
-            "rag_latency": lat_rag,
+
+            # Latencies
+            "latency_baseline": lat_base,
+            "latency_dp": lat_dp,
+            "latency_fhe": lat_fhe,
+            "latency_enhanced_rag": lat_rag_raw,
+            "latency_optimal_rag": lat_opt,
+
+            # NDCG (still in CSV for reference)
             "ndcg_dp": ndcg_dp,
-            "ndcg_rag": ndcg_rag,
-            "dp_drift": dp_drift,
-            "agreement_dp": index_agreement(base_ids, dp_ids),
-            "agreement_rag": index_agreement(base_ids, rag_ids),
+            "ndcg_enhanced_rag": ndcg_rag,
+            "ndcg_optimal_rag": ndcg_opt,
 
-            # NEW METRICS
+            # RAG improvement
+            "rag_improvement_enhanced": rag_improvement_enhanced,
+            "rag_improvement_optimal": rag_improvement_optimal,
+
+            # Rank movement
+            "rms_baseline": rms_base,
             "rms_dp": rms_dp,
-            "rms_rag": rms_rag,
+            "rms_enhanced_rag": rms_rag,
+            "rms_optimal_rag": rms_opt,
             "rms_fhe": rms_fhe,
-            "diversity_base": div_base,
-            "diversity_dp": div_dp,
-            "diversity_rag": div_rag,
-            "geometry_dp": geom_dp,
-            "query_robustness": robustness,
 
-            "rag_improvement": ndcg_rag - ndcg_dp
+            # Diversity
+            "diversity_baseline": div_base,
+            "diversity_dp": div_dp,
+            "diversity_enhanced_rag": div_rag,
+            "diversity_optimal_rag": div_opt,
+            "diversity_fhe": div_fhe,
+
+            # Geometry distortion (global)
+            "geometry_baseline": geom_base,
+            "geometry_dp": geom_dp,
+            "geometry_enhanced_rag": geom_rag,
+            "geometry_optimal_rag": geom_opt,
+            "geometry_fhe": geom_fhe,
+
+            # Query robustness
+            "robustness_baseline": robust_base,
+            "robustness_dp": robust_dp,
+            "robustness_enhanced_rag": robust_rag,
+            "robustness_optimal_rag": robust_opt,
+            "robustness_fhe": robust_fhe,
         })
 
     return pd.DataFrame(results)
 
 
 # ============================================================
-# Plots
+# Plotting
 # ============================================================
 
 def plot_results(df):
+    # LATENCY (log scale) across all methods
+    plt.figure(figsize=(9, 5))
+    modes = [
+        "latency_baseline",
+        "latency_dp",
+        "latency_fhe",
+        "latency_enhanced_rag",
+        "latency_optimal_rag"
+    ]
+    df[modes].mean().plot(kind="bar", log=True)
+    plt.xticks(
+        ticks=range(len(modes)),
+        labels=["Baseline", "DP", "FHE", "Enhanced RAG", "Optimal RAG"],
+        rotation=45
+    )
+    plt.title("Latency (log scale)")
+    plt.ylabel("Latency (ms, log)")
+    plt.tight_layout()
+    plt.savefig(os.path.join(PLOTS_DIR, "latency_log.png"))
+    plt.close()
 
-    # Rank Movement
-    plt.figure(figsize=(8,5))
+    # RAG improvement over DP
+    plt.figure(figsize=(9, 5))
+    plt.plot(df["rag_improvement_enhanced"], marker="o", label="Enhanced RAG vs DP")
+    plt.plot(df["rag_improvement_optimal"], marker="o", label="Optimal RAG vs DP")
+    plt.title("RAG NDCG Improvement Over DP")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(PLOTS_DIR, "rag_improvement.png"))
+    plt.close()
+
+    # Rank Movement Score
+    plt.figure(figsize=(9, 5))
     plt.plot(df["rms_dp"], marker="o", label="DP")
-    plt.plot(df["rms_rag"], marker="o", label="RAG")
-    plt.title("Rank Movement Score")
+    plt.plot(df["rms_enhanced_rag"], marker="o", label="Enhanced RAG")
+    plt.plot(df["rms_optimal_rag"], marker="o", label="Optimal RAG")
+    plt.plot(df["rms_fhe"], marker="o", label="FHE")
+    plt.title("Rank Movement Score (vs Baseline)")
     plt.legend()
     plt.tight_layout()
     plt.savefig(os.path.join(PLOTS_DIR, "rank_movement.png"))
     plt.close()
 
     # Diversity
-    plt.figure(figsize=(8,5))
-    plt.plot(df["diversity_base"], label="Baseline")
-    plt.plot(df["diversity_dp"], label="DP")
-    plt.plot(df["diversity_rag"], label="RAG")
-    plt.title("Diversity Score")
+    plt.figure(figsize=(9, 5))
+    plt.plot(df["diversity_baseline"], marker="o", label="Baseline")
+    plt.plot(df["diversity_dp"], marker="o", label="DP")
+    plt.plot(df["diversity_enhanced_rag"], marker="o", label="Enhanced RAG")
+    plt.plot(df["diversity_optimal_rag"], marker="o", label="Optimal RAG")
+    plt.plot(df["diversity_fhe"], marker="o", label="FHE")
+    plt.title("Diversity Score (higher is more diverse)")
     plt.legend()
     plt.tight_layout()
     plt.savefig(os.path.join(PLOTS_DIR, "diversity.png"))
     plt.close()
 
-    # Geometry Distortion
-    plt.figure(figsize=(8,5))
-    plt.plot(df["geometry_dp"], marker="o")
-    plt.title("DP Geometry Distortion")
+    # Geometry distortion
+    plt.figure(figsize=(9, 5))
+    geom_means = {
+        "Baseline": df["geometry_baseline"].mean(),
+        "DP": df["geometry_dp"].mean(),
+        "Enhanced RAG": df["geometry_enhanced_rag"].mean(),
+        "Optimal RAG": df["geometry_optimal_rag"].mean(),
+        "FHE": df["geometry_fhe"].mean(),
+    }
+    plt.bar(list(geom_means.keys()), list(geom_means.values()))
+    plt.title("Geometry Distortion vs Baseline")
     plt.tight_layout()
     plt.savefig(os.path.join(PLOTS_DIR, "geometry_distortion.png"))
     plt.close()
 
-    # Query Robustness
-    plt.figure(figsize=(8,5))
-    plt.plot(df["query_robustness"], marker="o")
-    plt.title("Query Robustness Score")
+    # Query robustness
+    plt.figure(figsize=(9, 5))
+    plt.plot(df["robustness_baseline"], marker="o", label="Baseline")
+    plt.plot(df["robustness_dp"], marker="o", label="DP")
+    plt.plot(df["robustness_enhanced_rag"], marker="o", label="Enhanced RAG")
+    plt.plot(df["robustness_optimal_rag"], marker="o", label="Optimal RAG")
+    plt.plot(df["robustness_fhe"], marker="o", label="FHE")
+    plt.title("Query Robustness (overlap under perturbation)")
+    plt.legend()
     plt.tight_layout()
     plt.savefig(os.path.join(PLOTS_DIR, "query_robustness.png"))
     plt.close()
@@ -374,18 +716,21 @@ def plot_results(df):
 # ============================================================
 
 def main():
-    print("Building environment...")
+    print("Building full environment fresh...")
 
-    pdf, emb, base_index, dp_index, bm25, rag_index, model = build_all(
+    pdf, embeddings, dp_vecs, opt_vecs, base_index, dp_index, opt_index, bm25, rag_index, model = build_all(
         DATA_PATH,
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
     df = evaluate_all(
         pdf,
-        emb,
+        embeddings,
+        dp_vecs,
+        opt_vecs,
         base_index,
         dp_index,
+        opt_index,
         bm25,
         rag_index,
         model
@@ -393,7 +738,7 @@ def main():
 
     out = os.path.join(PROJECT_ROOT, "evaluation_results.csv")
     df.to_csv(out, index=False)
-    print(f"Saved metrics to {out}")
+    print(f"\nSaved metrics to {out}")
 
     plot_results(df)
     print(f"Plots saved to {PLOTS_DIR}")
