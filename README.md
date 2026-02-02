@@ -7,6 +7,10 @@
   3) FHE POC (query-only encryption with TenSEAL CKKS; tiny subset demo)
   4) RAG-faster enhancements (HNSW index + hybrid BM25+vector + MMR re-rank)
 
+## 1. System Architecture
+
+![Alt 1](resources/vector_search_arch.png)
+
 ## Doker commands to setup
 
 ```bash
